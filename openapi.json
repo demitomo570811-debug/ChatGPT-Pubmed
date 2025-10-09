@@ -1,1 +1,87 @@
-https://github.com/demitomo570811-debug/ChatGPT-Pubmed/blob/main/openapi.json
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ChatGPT PubMed Connector",
+    "version": "1.2.0",
+    "description": "Search PubMed via NCBI E-utilities and return brief metadata."
+  },
+  "servers": [
+    { "url": "https://exceptional-wanda-demitomo-9763a650.koyeb.app" }
+  ],
+  "paths": {
+    "/search": {
+      "get": {
+        "operationId": "pubmedSearchV1",
+        "summary": "Search PubMed and return titles/authors/journal/year",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "PubMed search term (e.g., \"aspirin randomized trial\")"
+          },
+          {
+            "name": "retmax",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 5, "minimum": 1, "maximum": 50 },
+            "description": "Max results (1–50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SearchResponse" },
+                "examples": {
+                  "example": {
+                    "summary": "Sample",
+                    "value": {
+                      "query": "aspirin",
+                      "hits": [
+                        {
+                          "pmid": "38839268",
+                          "title": "Low-dose aspirin for the prevention of atherosclerotic cardiovascular disease.",
+                          "journal": "European heart journal",
+                          "year": "2024",
+                          "authors": ["Patrono C"],
+                          "url": "https://pubmed.ncbi.nlm.nih.gov/38839268/"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Hit": {
+        "type": "object",
+        "properties": {
+          "pmid":   { "type": "string" },
+          "title":  { "type": "string" },
+          "journal":{ "type": "string", "nullable": true },
+          "year":   { "type": "string", "nullable": true },
+          "authors":{ "type": "array", "items": { "type": "string" } },
+          "url":    { "type": "string", "format": "uri" }
+        },
+        "required": ["pmid", "title", "url"]
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "hits":  { "type": "array", "items": { "$ref": "#/components/schemas/Hit" } }
+        },
+        "required": ["query", "hits"]
+      }
+    }
+  }
+}
