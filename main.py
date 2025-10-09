@@ -10,46 +10,47 @@ NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")  # 任意（推奨）
 
 def ncbi_params(extra=None):
     p = {"tool": NCBI_TOOL}
-    if NCBI_API_KEY: p["api_key"] = NCBI_API_KEY
-    if NCBI_EMAIL:   p["email"] = NCBI_EMAIL
-    if extra: p.update(extra)
+    if NCBI_API_KEY:
+        p["api_key"] = NCBI_API_KEY
+    if NCBI_EMAIL:
+        p["email"] = NCBI_EMAIL
+    if extra:
+        p.update(extra)
     return p
 
 @app.get("/")
 def home():
-    return "PubMed connector API is running on Koyeb!"
+    return "PubMed connector API is running on Koyeb! v2"  # ←反映確認用にv2
 
 @app.get("/search")
 def search():
     query = request.args.get("query", "").strip()
     retmax = int(request.args.get("retmax", 5))
     if not query:
-        return jsonify({"error":"query required"}), 400
+        return jsonify({"error": "query required"}), 400
 
-    # 1) esearch: PMIDs を取得
-query = request.args.get("query", "").strip()
-retmax = int(request.args.get("retmax", 5))
-
-# ← ここを“フィールド指定 + 関連度順”にする
-term = f'(({query})[MeSH Terms] OR ({query})[Title/Abstract]) AND english[lang]'
-esearch_params = ncbi_params({
-    "db": "pubmed",
-    "term": term,
-    "retmode": "json",
-    "retmax": retmax,
-    "sort": "relevance"
-})
-r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=esearch_params, timeout=20)
-r.raise_for_status()
-data = r.json()
-idlist = data.get("esearchresult", {}).get("idlist", [])
+    # 1) esearch: PMIDs を取得（フィールド指定 + 関連度順）
+    term = f'(({query})[MeSH Terms] OR ({query})[Title/Abstract]) AND english[lang]'
+    esearch_params = ncbi_params({
+        "db": "pubmed",
+        "term": term,
+        "retmode": "json",
+        "retmax": retmax,
+        "sort": "relevance",
+    })
+    r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=esearch_params, timeout=20)
+    r.raise_for_status()
+    data = r.json()
+    idlist = data.get("esearchresult", {}).get("idlist", [])
 
     if not idlist:
         return jsonify({"query": query, "hits": []})
 
     # 2) esummary: 各PMIDのメタデータ取得
     esummary_params = ncbi_params({
-        "db": "pubmed", "id": ",".join(idlist), "retmode": "json"
+        "db": "pubmed",
+        "id": ",".join(idlist),
+        "retmode": "json",
     })
     r2 = requests.get(f"{NCBI_BASE}/esummary.fcgi", params=esummary_params, timeout=20)
     r2.raise_for_status()
@@ -59,10 +60,9 @@ idlist = data.get("esearchresult", {}).get("idlist", [])
     for pmid in idlist:
         item = sumdata.get(pmid, {})
         title = item.get("title")
-        journal = (item.get("fulljournalname")
-                   or (item.get("source") if isinstance(item.get("source"), str) else None))
+        journal = item.get("fulljournalname") or (item.get("source") if isinstance(item.get("source"), str) else None)
         year = None
-        if "pubdate" in item and isinstance(item["pubdate"], str):
+        if isinstance(item.get("pubdate"), str):
             year = item["pubdate"].split(" ")[0][:4]
         authors = [a.get("name") for a in item.get("authors", []) if a.get("name")]
         link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
@@ -122,8 +122,7 @@ def __debug_esearch():
 
 @app.get("/version")
 def version():
-    return jsonify({"version": "v2"})  # 何でもOK。更新のたびに文字を変える
-
+    return jsonify({"version": "v2"})
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
