@@ -101,3 +101,17 @@ def openapi():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
+@app.get("/__debug_esearch")
+def __debug_esearch():
+    q = request.args.get("q", "aspirin")
+    params = {
+        "db": "pubmed",
+        "term": q,
+        "retmode": "json",
+        "retmax": 5,
+        "sort": "relevance",
+    }
+    r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=params, timeout=20)
+    return jsonify({"url": r.url, "status": r.status_code, "json": r.json()})
+
