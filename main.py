@@ -98,10 +98,6 @@ def openapi():
     }
     return jsonify(spec)
 
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
-
 @app.get("/__debug_esearch")
 def __debug_esearch():
     q = request.args.get("q", "aspirin")
@@ -119,3 +115,7 @@ def __debug_esearch():
 def version():
     return jsonify({"version": "v2"})  # 何でもOK。更新のたびに文字を変える
 
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
