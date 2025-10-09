@@ -79,10 +79,17 @@ def search():
 
 @app.get("/openapi.json")
 def openapi():
-    base_url = os.getenv("PUBLIC_BASE_URL", "https://exceptional-wanda-demitomo-9763a650.koyeb.app")
+    base_url = os.getenv(
+        "PUBLIC_BASE_URL",
+        "https://exceptional-wanda-demitomo-9763a650.koyeb.app"
+    )
     spec = {
-      "openapi": "3.0.0",
-      "info": {"title": "ChatGPT PubMed Connector", "version": "1.1.0"},
+      "openapi": "3.0.3",
+      "info": {
+        "title": "ChatGPT PubMed Connector",
+        "version": "1.2.0",
+        "description": "Search PubMed via NCBI E-utilities and return brief metadata."
+      },
       "servers": [{"url": base_url}],
       "paths": {
         "/search": {
@@ -90,22 +97,81 @@ def openapi():
             "operationId": "pubmedSearch",
             "summary": "Search PubMed and return titles/authors/journal/year",
             "parameters": [
-              {"name":"query","in":"query","required":True,
-               "schema":{"type":"string"},
-               "description":"PubMed search term (e.g., aspirin randomized trial)"},
-              {"name":"retmax","in":"query","required":False,
-               "schema":{"type":"integer","default":5,"minimum":1,"maximum":50},
-               "description":"Max results (1–50)"}
+              {
+                "name": "query",
+                "in": "query",
+                "required": True,
+                "schema": {"type": "string"},
+                "description": "PubMed search term (e.g., \"aspirin randomized trial\")"
+              },
+              {
+                "name": "retmax",
+                "in": "query",
+                "required": False,
+                "schema": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                "description": "Max results (1–50)"
+              }
             ],
             "responses": {
-              "200": {"description":"OK",
-                "content":{"application/json":{"schema":{"type":"object"}}}}
+              "200": {
+                "description": "OK",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/SearchResponse"
+                    },
+                    "examples": {
+                      "example": {
+                        "summary": "Sample",
+                        "value": {
+                          "query": "aspirin",
+                          "hits": [
+                            {
+                              "pmid": "38839268",
+                              "title": "Low-dose aspirin for the prevention of atherosclerotic cardiovascular disease.",
+                              "journal": "European heart journal",
+                              "year": "2024",
+                              "authors": ["Patrono C"],
+                              "url": "https://pubmed.ncbi.nlm.nih.gov/38839268/"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "Hit": {
+            "type": "object",
+            "properties": {
+              "pmid":   {"type": "string"},
+              "title":  {"type": "string"},
+              "journal":{"type": "string", "nullable": True},
+              "year":   {"type": "string", "nullable": True},
+              "authors":{"type": "array", "items": {"type": "string"}},
+              "url":    {"type": "string", "format": "uri"}
+            },
+            "required": ["pmid", "title", "url"]
+          },
+          "SearchResponse": {
+            "type": "object",
+            "properties": {
+              "query": {"type": "string"},
+              "hits":  {"type": "array", "items": {"$ref": "#/components/schemas/Hit"}}
+            },
+            "required": ["query", "hits"]
           }
         }
       }
     }
     return jsonify(spec)
+
 
 @app.get("/__debug_esearch")
 def __debug_esearch():
