@@ -115,3 +115,7 @@ def __debug_esearch():
     r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=params, timeout=20)
     return jsonify({"url": r.url, "status": r.status_code, "json": r.json()})
 
+@app.get("/version")
+def version():
+    return jsonify({"version": "v2"})  # 何でもOK。更新のたびに文字を変える
+
