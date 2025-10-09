@@ -70,7 +70,7 @@ def search():
 
 @app.get("/openapi.json")
 def openapi():
-    base_url = os.getenv("PUBLIC_BASE_URL", "https://YOUR-SERVICE.koyeb.app")
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://exceptional-wanda-demitomo-9763a650.koyeb.app")
     spec = {
       "openapi": "3.0.0",
       "info": {"title": "ChatGPT PubMed Connector", "version": "1.1.0"},
