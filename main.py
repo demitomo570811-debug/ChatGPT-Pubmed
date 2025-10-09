@@ -27,13 +27,22 @@ def search():
         return jsonify({"error":"query required"}), 400
 
     # 1) esearch: PMIDs を取得
-    esearch_params = ncbi_params({
-        "db": "pubmed", "term": query, "retmode": "json", "retmax": retmax
-    })
-    r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=esearch_params, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    idlist = data.get("esearchresult", {}).get("idlist", [])
+query = request.args.get("query", "").strip()
+retmax = int(request.args.get("retmax", 5))
+
+# ← ここを“フィールド指定 + 関連度順”にする
+term = f'(({query})[MeSH Terms] OR ({query})[Title/Abstract]) AND english[lang]'
+esearch_params = ncbi_params({
+    "db": "pubmed",
+    "term": term,
+    "retmode": "json",
+    "retmax": retmax,
+    "sort": "relevance"
+})
+r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=esearch_params, timeout=20)
+r.raise_for_status()
+data = r.json()
+idlist = data.get("esearchresult", {}).get("idlist", [])
 
     if not idlist:
         return jsonify({"query": query, "hits": []})
