@@ -1,47 +1,96 @@
-# main.py
 import os, requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # 任意
+NCBI_TOOL = "chatgpt-pubmed-connector"    # 任意の識別子
+NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")  # 任意（推奨）
+
+def ncbi_params(extra=None):
+    p = {"tool": NCBI_TOOL}
+    if NCBI_API_KEY: p["api_key"] = NCBI_API_KEY
+    if NCBI_EMAIL:   p["email"] = NCBI_EMAIL
+    if extra: p.update(extra)
+    return p
+
 @app.get("/")
 def home():
-    return "PubMed connector API is running!"
+    return "PubMed connector API is running on Koyeb!"
 
 @app.get("/search")
 def search():
-    query = request.args.get("query", "")
-    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    params = {"db":"pubmed","term":query,"retmode":"json","retmax":5}
-    r = requests.get(url, params=params, timeout=20)
+    query = request.args.get("query", "").strip()
+    retmax = int(request.args.get("retmax", 5))
+    if not query:
+        return jsonify({"error":"query required"}), 400
+
+    # 1) esearch: PMIDs を取得
+    esearch_params = ncbi_params({
+        "db": "pubmed", "term": query, "retmode": "json", "retmax": retmax
+    })
+    r = requests.get(f"{NCBI_BASE}/esearch.fcgi", params=esearch_params, timeout=20)
     r.raise_for_status()
-    return jsonify(r.json())
+    data = r.json()
+    idlist = data.get("esearchresult", {}).get("idlist", [])
+
+    if not idlist:
+        return jsonify({"query": query, "hits": []})
+
+    # 2) esummary: 各PMIDのメタデータ取得
+    esummary_params = ncbi_params({
+        "db": "pubmed", "id": ",".join(idlist), "retmode": "json"
+    })
+    r2 = requests.get(f"{NCBI_BASE}/esummary.fcgi", params=esummary_params, timeout=20)
+    r2.raise_for_status()
+    sumdata = r2.json().get("result", {})
+
+    hits = []
+    for pmid in idlist:
+        item = sumdata.get(pmid, {})
+        title = item.get("title")
+        journal = (item.get("fulljournalname")
+                   or (item.get("source") if isinstance(item.get("source"), str) else None))
+        year = None
+        if "pubdate" in item and isinstance(item["pubdate"], str):
+            year = item["pubdate"].split(" ")[0][:4]
+        authors = [a.get("name") for a in item.get("authors", []) if a.get("name")]
+        link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        hits.append({
+            "pmid": pmid,
+            "title": title,
+            "journal": journal,
+            "year": year,
+            "authors": authors[:10],
+            "url": link
+        })
+
+    return jsonify({"query": query, "hits": hits})
 
 @app.get("/openapi.json")
 def openapi():
+    base_url = os.getenv("PUBLIC_BASE_URL", "https://YOUR-SERVICE.koyeb.app")
     spec = {
       "openapi": "3.0.0",
-      "info": {"title": "ChatGPT PubMed Connector", "version": "1.0.0"},
-      "servers": [{"url": "https://exceptional-wanda-demitomo-9763a650.koyeb.app"}],
+      "info": {"title": "ChatGPT PubMed Connector", "version": "1.1.0"},
+      "servers": [{"url": base_url}],
       "paths": {
         "/search": {
           "get": {
             "operationId": "pubmedSearch",
-            "summary": "Search PubMed (E-utilities esearch)",
+            "summary": "Search PubMed and return titles/authors/journal/year",
             "parameters": [
-              {
-                "name": "query",
-                "in": "query",
-                "required": True,
-                "schema": {"type": "string"},
-                "description": "PubMed search term (e.g., 'aspirin randomized trial')"
-              }
+              {"name":"query","in":"query","required":True,
+               "schema":{"type":"string"},
+               "description":"PubMed search term (e.g., aspirin randomized trial)"},
+              {"name":"retmax","in":"query","required":False,
+               "schema":{"type":"integer","default":5,"minimum":1,"maximum":50},
+               "description":"Max results (1–50)"}
             ],
             "responses": {
-              "200": {
-                "description": "PubMed esearch JSON",
-                "content": {"application/json": {"schema": {"type": "object"}}}
-              }
+              "200": {"description":"OK",
+                "content":{"application/json":{"schema":{"type":"object"}}}}
             }
           }
         }
