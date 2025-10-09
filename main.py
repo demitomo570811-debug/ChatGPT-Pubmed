@@ -1,10 +1,9 @@
-from flask_cors import CORS
-CORS(app)
-
 import os, requests
 from flask import Flask, request, jsonify
+from flask_cors import CORS        # ← ここで import
 
 app = Flask(__name__)
+CORS(app)                          # ← app 作成の“後”に呼ぶ
 
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # 任意
