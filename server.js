@@ -4,12 +4,90 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
+const https = require('https');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DB_PATH = path.join(__dirname, 'db.json');
+const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || '';
+const HEARTBEAT_TIMEOUT_SEC = 60;
+
+// ---------------------
+// LINE Notify 送信
+// ---------------------
+function sendLineNotify(message) {
+  if (!LINE_NOTIFY_TOKEN) {
+    console.warn('LINE_NOTIFY_TOKEN not set, skipping alert:', message);
+    return;
+  }
+  const postData = `message=${encodeURIComponent(message)}`;
+  const options = {
+    hostname: 'notify-api.line.me',
+    path: '/api/notify',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Bearer ${LINE_NOTIFY_TOKEN}`,
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+  const req = https.request(options, (res) => {
+    if (res.statusCode !== 200) {
+      console.error('LINE Notify error:', res.statusCode);
+    }
+  });
+  req.on('error', (e) => console.error('LINE Notify request failed:', e.message));
+  req.write(postData);
+  req.end();
+}
+
+// ---------------------
+// ハートビート監視
+// ---------------------
+const HEARTBEAT_DIR = process.env.HEARTBEAT_DIR || path.join(__dirname, 'heartbeats');
+
+let dolphinAlerted = false;
+let kronosAlerted = false;
+
+function checkHeartbeat(filePath, label, alertedRef) {
+  try {
+    if (!fs.existsSync(filePath)) return alertedRef;
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const ts = new Date(data.timestamp.replace(' ', 'T')).getTime();
+    const ageSec = (Date.now() - ts) / 1000;
+    if (ageSec > HEARTBEAT_TIMEOUT_SEC) {
+      if (!alertedRef) {
+        sendLineNotify(`⚠️ ${label} ハートビート途絶（${Math.floor(ageSec)}秒経過）`);
+        console.warn(`${label} heartbeat timeout: ${Math.floor(ageSec)}s`);
+        return true;
+      }
+    } else {
+      if (alertedRef) {
+        console.log(`${label} heartbeat recovered`);
+      }
+      return false;
+    }
+  } catch (e) {
+    console.error(`${label} heartbeat check error:`, e.message);
+  }
+  return alertedRef;
+}
+
+setInterval(() => {
+  dolphinAlerted = checkHeartbeat(
+    path.join(HEARTBEAT_DIR, 'rescue_heartbeat.json'),
+    'Dolphin RescueEA',
+    dolphinAlerted
+  );
+  kronosAlerted = checkHeartbeat(
+    path.join(HEARTBEAT_DIR, 'kronos_heartbeat.json'),
+    'Kronos RescueEA',
+    kronosAlerted
+  );
+}, 15000);
 
 function readDb() {
   return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
@@ -99,7 +177,11 @@ app.get('/api/accounts', (req, res) => {
 // GET /api/kronos/status
 app.get('/api/kronos/status', (req, res) => {
   const db = readDb();
-  res.json(db.kronos_status || {});
+  const status = db.kronos_status || {};
+  if (!status.timestamp) {
+    return res.json({ active: false, message: '未接続' });
+  }
+  res.json(status);
 });
 
 // GET /api/kronos/trades
