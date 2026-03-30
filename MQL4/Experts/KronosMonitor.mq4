@@ -6,8 +6,12 @@
 #property version   "1.00"
 #property strict
 
+//--- 接続設定
+input string AccountServer     = "XMTrading-Real 31";  // 接続サーバー
+input int    AccountId         = 41137395;             // MT4口座ID
+
 //--- パラメータ
-input int    MAGIC_NUMBER      = 0;       // マジックナンバー（後で設定）
+input int    MAGIC_NUMBER      = 0;       // マジックナンバー（EAファイル確認後に設定）
 input int    HEARTBEAT_SEC     = 30;      // ハートビート間隔（秒）
 input string OUTPUT_FILE       = "kronos_status.json"; // 出力ファイル名
 
@@ -19,7 +23,9 @@ datetime g_lastBeat = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("KronosMonitor started. MAGIC=", MAGIC_NUMBER,
+   Print("KronosMonitor started. Server=", AccountServer,
+         " AccountId=", AccountId,
+         " MAGIC=", MAGIC_NUMBER,
          " Interval=", HEARTBEAT_SEC, "s");
    // 初回即時送信
    WriteStatus();
@@ -72,6 +78,8 @@ void WriteStatus()
 
    //--- JSON組み立て
    string json = "{";
+   json += "\"account_id\":" + IntegerToString(AccountId) + ",";
+   json += "\"server\":\"" + AccountServer + "\",";
    json += "\"balance\":" + DoubleToString(bal, 2) + ",";
    json += "\"equity\":" + DoubleToString(eq, 2) + ",";
    json += "\"dd_percent\":" + DoubleToString(dd, 2) + ",";

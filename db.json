@@ -12,9 +12,19 @@
     },
     {
       "id": "kronos",
-      "name": "Kronos",
+      "name": "Kronos Gold デフォルト",
       "broker": "XM",
+      "server": "XMTrading-Real 31",
+      "mt_id": 41137395,
+      "pair": "XAUUSD",
       "magic": null,
+      "leverage": 1000,
+      "margin_per_lot": 46500,
+      "lot_per_unit": 0.01,
+      "capital_per_unit": 35000,
+      "nappin_count": 9,
+      "nappin_width_pips": 300,
+      "endurance_pips": 270,
       "active": false
     }
   ],
