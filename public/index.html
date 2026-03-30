@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FX Multi-Account Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; }
+
+    /* タブ */
+    .tab-bar {
+      display: flex;
+      background: #16213e;
+      border-bottom: 2px solid #0f3460;
+    }
+    .tab-btn {
+      padding: 12px 24px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: #8892b0;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: #ccd6f6; }
+    .tab-btn.active {
+      color: #64ffda;
+      border-bottom: 2px solid #64ffda;
+      margin-bottom: -2px;
+    }
+
+    /* タブコンテンツ */
+    .tab-content { display: none; padding: 20px; }
+    .tab-content.active { display: block; }
+
+    /* カード */
+    .card {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h2 { color: #64ffda; margin-bottom: 12px; font-size: 18px; }
+
+    /* ステータスグリッド */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .stat-item { text-align: center; }
+    .stat-label { font-size: 12px; color: #8892b0; }
+    .stat-value { font-size: 24px; font-weight: bold; color: #ccd6f6; }
+
+    /* テーブル */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #0f3460; }
+    th { color: #64ffda; font-size: 12px; text-transform: uppercase; }
+
+    /* 準備中 */
+    .placeholder {
+      text-align: center;
+      padding: 60px 20px;
+      color: #8892b0;
+    }
+    .placeholder .icon { font-size: 48px; margin-bottom: 16px; }
+    .placeholder p { font-size: 16px; }
+  </style>
+</head>
+<body>
+
+  <!-- タブバー -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="dolphin">Dolphin（BigBoss）</button>
+    <button class="tab-btn" data-tab="kronos">Kronos（XM）</button>
+  </div>
+
+  <!-- Dolphin タブ -->
+  <div id="tab-dolphin" class="tab-content active">
+    <div class="card">
+      <h2>Dolphin ステータス</h2>
+      <div class="status-grid">
+        <div class="stat-item">
+          <div class="stat-label">Balance</div>
+          <div class="stat-value" id="dolphin-balance">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Equity</div>
+          <div class="stat-value" id="dolphin-equity">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">DD%</div>
+          <div class="stat-value" id="dolphin-dd">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Last Update</div>
+          <div class="stat-value" id="dolphin-update" style="font-size:14px;">--</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>ポジション</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticket</th><th>Symbol</th><th>Type</th><th>Lots</th><th>Price</th><th>Profit</th>
+          </tr>
+        </thead>
+        <tbody id="dolphin-positions"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Kronos タブ -->
+  <div id="tab-kronos" class="tab-content">
+    <div class="card">
+      <div class="placeholder">
+        <div class="icon">&#9881;</div>
+        <p>Kronos（XM）は準備中です</p>
+        <p style="font-size:13px; margin-top:8px; color:#555e7e;">
+          Phase 2 で有効化されます
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- タブ切り替え ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // --- Dolphin データ取得 ---
+    async function fetchDolphinStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (data.balance != null) {
+          document.getElementById('dolphin-balance').textContent = Number(data.balance).toLocaleString();
+          document.getElementById('dolphin-equity').textContent = Number(data.equity).toLocaleString();
+          document.getElementById('dolphin-dd').textContent = (data.dd_percent || 0).toFixed(2) + '%';
+          document.getElementById('dolphin-update').textContent = data.timestamp || '--';
+        }
+
+        // ポジション表示
+        if (data.positions && Array.isArray(data.positions)) {
+          const tbody = document.getElementById('dolphin-positions');
+          tbody.innerHTML = '';
+          const typeNames = ['BUY', 'SELL'];
+          data.positions.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td>' + p.ticket + '</td>' +
+              '<td>' + p.symbol + '</td>' +
+              '<td>' + (typeNames[p.type] || p.type) + '</td>' +
+              '<td>' + p.lots + '</td>' +
+              '<td>' + p.open_price + '</td>' +
+              '<td style="color:' + (p.profit >= 0 ? '#64ffda' : '#ff6b6b') + '">' + p.profit + '</td>';
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (e) {
+        console.error('Dolphin fetch error:', e);
+      }
+    }
+
+    // 初回 + 10秒ごとに更新
+    fetchDolphinStatus();
+    setInterval(fetchDolphinStatus, 10000);
+  </script>
+</body>
+</html>
