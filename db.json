@@ -1,0 +1,24 @@
+{
+  "status": {},
+  "trades": [],
+  "daily_dd": [],
+  "accounts": [
+    {
+      "id": "dolphin",
+      "name": "Dolphin",
+      "broker": "BigBoss",
+      "magic": 777,
+      "active": true
+    },
+    {
+      "id": "kronos",
+      "name": "Kronos",
+      "broker": "XM",
+      "magic": null,
+      "active": false
+    }
+  ],
+  "kronos_status": {},
+  "kronos_trades": [],
+  "kronos_daily_dd": []
+}
