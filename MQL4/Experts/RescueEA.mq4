@@ -11,7 +11,8 @@ input string HEARTBEAT_FILE = "rescue_heartbeat.json";  // ハートビートフ
 input string OUTPUT_FILE    = "rescue_status.json";      // ステータス出力ファイル名
 
 //--- パラメータ
-input int    MAGIC_NUMBER   = 777;      // マジックナンバー
+input int    MAGIC_NUMBER   = 12345;    // マジックナンバー（Dolphin用）
+input int    MAGIC_NUMBER2  = 0;        // マジックナンバー2（0=無効、Kronos用:414 or 643）
 input int    HEARTBEAT_SEC  = 30;       // ハートビート間隔（秒）
 input double DD_ALERT_PCT   = 20.0;     // DD警告閾値（%）
 
@@ -25,6 +26,7 @@ int OnInit()
 {
    EventSetTimer(HEARTBEAT_SEC);
    Print("RescueEA v2.7 started. MAGIC=", MAGIC_NUMBER,
+         " MAGIC2=", MAGIC_NUMBER2,
          " Interval=", HEARTBEAT_SEC, "s",
          " HeartbeatFile=", HEARTBEAT_FILE,
          " OutputFile=", OUTPUT_FILE);
@@ -126,6 +128,16 @@ void WriteStatus()
 }
 
 //+------------------------------------------------------------------+
+//| MAGIC一致判定（MAGIC_NUMBER2 > 0 の場合は両方を対象）             |
+//+------------------------------------------------------------------+
+bool IsMagicMatch(int magic)
+{
+   if (magic == MAGIC_NUMBER) return true;
+   if (MAGIC_NUMBER2 > 0 && magic == MAGIC_NUMBER2) return true;
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| MAGIC一致ポジションのJSON配列を生成                               |
 //+------------------------------------------------------------------+
 string BuildPositionsJson()
@@ -137,7 +149,7 @@ string BuildPositionsJson()
    {
       if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
          continue;
-      if (OrderMagicNumber() != MAGIC_NUMBER)
+      if (!IsMagicMatch(OrderMagicNumber()))
          continue;
 
       if (!first) result += ",";
