@@ -6,6 +6,9 @@ const multer = require('multer');
 
 const https = require('https');
 
+// .env 読み込み（dotenv がある場合）
+try { require('dotenv').config(); } catch (_) {}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -14,6 +17,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DB_PATH = path.join(__dirname, 'db.json');
 const LINE_NOTIFY_TOKEN = process.env.LINE_NOTIFY_TOKEN || '';
 const HEARTBEAT_TIMEOUT_SEC = 60;
+
+// ---------------------
+// Kronos MT4 ファイルパス
+// ---------------------
+const KRONOS_MT4_FILES_PATH = process.env.KRONOS_MT4_FILES_PATH || '';
+const KRONOS_STATUS_FILE = KRONOS_MT4_FILES_PATH
+  ? path.join(KRONOS_MT4_FILES_PATH, 'kronos_status.json')
+  : '';
+const KRONOS_HEARTBEAT_FILE = KRONOS_MT4_FILES_PATH
+  ? path.join(KRONOS_MT4_FILES_PATH, 'kronos_heartbeat.json')
+  : '';
 
 // ---------------------
 // LINE Notify 送信
@@ -47,14 +61,16 @@ function sendLineNotify(message) {
 // ---------------------
 // ハートビート監視
 // ---------------------
-const HEARTBEAT_DIR = process.env.HEARTBEAT_DIR || path.join(__dirname, 'heartbeats');
+const DOLPHIN_HEARTBEAT_FILE = process.env.DOLPHIN_MT4_FILES_PATH
+  ? path.join(process.env.DOLPHIN_MT4_FILES_PATH, 'rescue_heartbeat.json')
+  : '';
 
 let dolphinAlerted = false;
 let kronosAlerted = false;
 
 function checkHeartbeat(filePath, label, alertedRef) {
   try {
-    if (!fs.existsSync(filePath)) return alertedRef;
+    if (!filePath || !fs.existsSync(filePath)) return alertedRef;
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const ts = new Date(data.timestamp.replace(' ', 'T')).getTime();
     const ageSec = (Date.now() - ts) / 1000;
@@ -76,17 +92,33 @@ function checkHeartbeat(filePath, label, alertedRef) {
   return alertedRef;
 }
 
+function isKronosActive() {
+  try {
+    const db = readDb();
+    const kronos = (db.accounts || []).find(a => a.id === 'kronos');
+    return kronos && kronos.active;
+  } catch (_) {
+    return false;
+  }
+}
+
 setInterval(() => {
-  dolphinAlerted = checkHeartbeat(
-    path.join(HEARTBEAT_DIR, 'rescue_heartbeat.json'),
-    'Dolphin RescueEA',
-    dolphinAlerted
-  );
-  kronosAlerted = checkHeartbeat(
-    path.join(HEARTBEAT_DIR, 'kronos_heartbeat.json'),
-    'Kronos RescueEA',
-    kronosAlerted
-  );
+  // Dolphin 監視
+  if (DOLPHIN_HEARTBEAT_FILE) {
+    dolphinAlerted = checkHeartbeat(
+      DOLPHIN_HEARTBEAT_FILE,
+      'Dolphin RescueEA',
+      dolphinAlerted
+    );
+  }
+  // Kronos 監視（active=falseの場合はスキップ）
+  if (KRONOS_HEARTBEAT_FILE && isKronosActive()) {
+    kronosAlerted = checkHeartbeat(
+      KRONOS_HEARTBEAT_FILE,
+      'Kronos RescueEA',
+      kronosAlerted
+    );
+  }
 }, 15000);
 
 function readDb() {
@@ -174,14 +206,18 @@ app.get('/api/accounts', (req, res) => {
 // 新規: Kronos エンドポイント
 // ---------------------
 
-// GET /api/kronos/status
+// GET /api/kronos/status - kronos_status.json を直読み
 app.get('/api/kronos/status', (req, res) => {
-  const db = readDb();
-  const status = db.kronos_status || {};
-  if (!status.timestamp) {
-    return res.json({ active: false, message: '未接続' });
+  if (!KRONOS_STATUS_FILE || !fs.existsSync(KRONOS_STATUS_FILE)) {
+    return res.json({ active: false, message: '未接続', timestamp: null });
   }
-  res.json(status);
+  try {
+    const data = JSON.parse(fs.readFileSync(KRONOS_STATUS_FILE, 'utf8'));
+    res.json(data);
+  } catch (e) {
+    console.error('kronos_status.json read error:', e.message);
+    res.json({ active: false, message: '未接続', timestamp: null });
+  }
 });
 
 // GET /api/kronos/trades
