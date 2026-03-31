@@ -19,6 +19,7 @@
       "pair": "XAUUSD",
       "magic1": 414,
       "magic2": 643,
+      "timeframe": "M5",
       "leverage": 1000,
       "margin_per_lot": 46500,
       "lot_per_unit": 0.01,
@@ -26,6 +27,9 @@
       "nappin_count": 8,
       "nappin_width_pips": 300,
       "endurance_pips": 270,
+      "indicator_stop": false,
+      "friday_stop_hour": 0,
+      "monday_start_hour": 0,
       "active": false
     }
   ],
