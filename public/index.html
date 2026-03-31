@@ -47,26 +47,70 @@
     /* ステータスグリッド */
     .status-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
     }
     .stat-item { text-align: center; }
     .stat-label { font-size: 12px; color: #8892b0; }
     .stat-value { font-size: 24px; font-weight: bold; color: #ccd6f6; }
+    .stat-value.warn { color: #ff6b6b; }
+    .stat-value.ok { color: #64ffda; }
 
     /* テーブル */
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #0f3460; }
     th { color: #64ffda; font-size: 12px; text-transform: uppercase; }
+    td { font-size: 13px; }
 
-    /* 準備中 */
-    .placeholder {
+    /* ナンピン段数バー */
+    .nd-bar { display: flex; gap: 3px; align-items: center; }
+    .nd-pip { width: 10px; height: 16px; border-radius: 2px; background: #0f3460; }
+    .nd-pip.filled { background: #f59e0b; }
+    .nd-pip.danger { background: #ff6b6b; }
+
+    /* グラフ */
+    .chart-container { position: relative; height: 250px; }
+    canvas { width: 100% !important; height: 100% !important; }
+    .chart-empty { text-align: center; padding: 40px; color: #555e7e; }
+
+    /* アップロード */
+    .upload-area {
+      border: 2px dashed #0f3460;
+      border-radius: 8px;
+      padding: 30px;
       text-align: center;
-      padding: 60px 20px;
-      color: #8892b0;
+      cursor: pointer;
+      transition: border-color 0.2s;
     }
-    .placeholder .icon { font-size: 48px; margin-bottom: 16px; }
-    .placeholder p { font-size: 16px; }
+    .upload-area:hover { border-color: #64ffda; }
+    .upload-area input[type="file"] { display: none; }
+    .upload-result { margin-top: 12px; padding: 10px; border-radius: 4px; display: none; }
+    .upload-result.success { display: block; background: #1b4332; color: #64ffda; }
+    .upload-result.error { display: block; background: #3d1111; color: #ff6b6b; }
+
+    /* 合算タブ 切り替えボタン */
+    .mode-btns { display: flex; gap: 8px; margin-bottom: 16px; }
+    .mode-btn {
+      padding: 8px 16px; border: 1px solid #0f3460; border-radius: 4px;
+      background: transparent; color: #8892b0; cursor: pointer; font-size: 13px;
+    }
+    .mode-btn.active { background: #0f3460; color: #64ffda; border-color: #64ffda; }
+
+    /* サマリーカード */
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .summary-card {
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .summary-card .label { font-size: 12px; color: #8892b0; margin-bottom: 4px; }
+    .summary-card .value { font-size: 28px; font-weight: bold; color: #ccd6f6; }
   </style>
 </head>
 <body>
@@ -75,9 +119,10 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="dolphin">Dolphin（BigBoss）</button>
     <button class="tab-btn" data-tab="kronos">Kronos（XM）</button>
+    <button class="tab-btn" data-tab="combined">合算</button>
   </div>
 
-  <!-- Dolphin タブ -->
+  <!-- ========== Dolphin タブ ========== -->
   <div id="tab-dolphin" class="tab-content active">
     <div class="card">
       <h2>Dolphin ステータス</h2>
@@ -100,45 +145,163 @@
         </div>
       </div>
     </div>
-
     <div class="card">
       <h2>ポジション</h2>
       <table>
         <thead>
-          <tr>
-            <th>Ticket</th><th>Symbol</th><th>Type</th><th>Lots</th><th>Price</th><th>Profit</th>
-          </tr>
+          <tr><th>Ticket</th><th>Symbol</th><th>Type</th><th>Lots</th><th>Price</th><th>Profit</th></tr>
         </thead>
         <tbody id="dolphin-positions"></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Kronos タブ -->
+  <!-- ========== Kronos タブ ========== -->
   <div id="tab-kronos" class="tab-content">
+
+    <!-- パネル1: 稼働状況 -->
     <div class="card">
-      <div class="placeholder">
-        <div class="icon">&#9881;</div>
-        <p>Kronos（XM）は準備中です</p>
-        <p style="font-size:13px; margin-top:8px; color:#555e7e;">
-          Phase 2 で有効化されます
-        </p>
+      <h2>Kronos 稼働状況</h2>
+      <div class="status-grid">
+        <div class="stat-item">
+          <div class="stat-label">Balance</div>
+          <div class="stat-value" id="k-balance">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Equity</div>
+          <div class="stat-value" id="k-equity">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">DD%</div>
+          <div class="stat-value" id="k-dd">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">ND（段数）</div>
+          <div class="stat-value" id="k-nd">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Heartbeat</div>
+          <div class="stat-value" id="k-heartbeat">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Last Update</div>
+          <div class="stat-value" id="k-update" style="font-size:14px;">--</div>
+        </div>
       </div>
+    </div>
+
+    <!-- パネル2: オープンポジション -->
+    <div class="card">
+      <h2>オープンポジション</h2>
+      <div id="k-nd-indicator" style="margin-bottom:12px;"></div>
+      <table>
+        <thead>
+          <tr><th>Ticket</th><th>Magic</th><th>Type</th><th>Lots</th><th>Open</th><th>Current</th><th>Profit</th></tr>
+        </thead>
+        <tbody id="k-positions"></tbody>
+      </table>
+      <p id="k-pos-empty" style="color:#555e7e; text-align:center; padding:20px; display:none;">ポジションなし</p>
+    </div>
+
+    <!-- パネル3: 損益グラフ -->
+    <div class="card">
+      <h2>日次損益推移</h2>
+      <div id="k-chart-area">
+        <div class="chart-container"><canvas id="k-chart"></canvas></div>
+        <div id="k-chart-empty" class="chart-empty" style="display:none;">データ蓄積中</div>
+      </div>
+    </div>
+
+    <!-- パネル4: DSアップロード -->
+    <div class="card">
+      <h2>DS レポートアップロード</h2>
+      <div class="upload-area" id="k-upload-area">
+        <p>ここをクリックしてDSファイル（HTML）を選択</p>
+        <input type="file" id="k-file-input" accept=".html,.htm">
+      </div>
+      <div class="upload-result" id="k-upload-result"></div>
+    </div>
+
+    <!-- パネル5: 累積トレード統計 -->
+    <div class="card">
+      <h2>累積トレード統計</h2>
+      <div class="status-grid" id="k-stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">総トレード数</div>
+          <div class="stat-value" id="k-total-trades">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">勝率</div>
+          <div class="stat-value" id="k-winrate">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">総損益</div>
+          <div class="stat-value" id="k-total-profit">--</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">平均日利</div>
+          <div class="stat-value" id="k-avg-daily">--</div>
+        </div>
+      </div>
+      <p id="k-stats-msg" style="color:#555e7e; text-align:center; margin-top:8px; display:none;"></p>
     </div>
   </div>
 
+  <!-- ========== 合算タブ ========== -->
+  <div id="tab-combined" class="tab-content">
+
+    <!-- 表示切り替え -->
+    <div class="mode-btns">
+      <button class="mode-btn" data-mode="dolphin">Dolphinのみ</button>
+      <button class="mode-btn" data-mode="kronos">Kronosのみ</button>
+      <button class="mode-btn active" data-mode="combined">合算</button>
+    </div>
+
+    <!-- 合算サマリー -->
+    <div class="summary-row">
+      <div class="summary-card">
+        <div class="label">合計残高</div>
+        <div class="value" id="c-total-balance">--</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">合計DD%</div>
+        <div class="value" id="c-total-dd">--</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">今月合計損益</div>
+        <div class="value" id="c-month-profit">--</div>
+      </div>
+    </div>
+
+    <!-- 合算損益グラフ -->
+    <div class="card">
+      <h2 id="c-chart-title">合算 日次損益</h2>
+      <div class="chart-container"><canvas id="c-chart"></canvas></div>
+      <div id="c-chart-empty" class="chart-empty" style="display:none;">データ蓄積中</div>
+    </div>
+  </div>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
   <script>
-    // --- タブ切り替え ---
+    // ==========================================
+    // タブ切り替え
+    // ==========================================
+    let activeTab = 'dolphin';
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        activeTab = btn.dataset.tab;
+        document.getElementById('tab-' + activeTab).classList.add('active');
       });
     });
 
-    // --- Dolphin データ取得 ---
+    // ==========================================
+    // Dolphin（既存ロジック - 変更なし）
+    // ==========================================
     async function fetchDolphinStatus() {
       try {
         const res = await fetch('/api/status');
@@ -149,8 +312,6 @@
           document.getElementById('dolphin-dd').textContent = (data.dd_percent || 0).toFixed(2) + '%';
           document.getElementById('dolphin-update').textContent = data.timestamp || '--';
         }
-
-        // ポジション表示
         if (data.positions && Array.isArray(data.positions)) {
           const tbody = document.getElementById('dolphin-positions');
           tbody.innerHTML = '';
@@ -171,10 +332,350 @@
         console.error('Dolphin fetch error:', e);
       }
     }
-
-    // 初回 + 10秒ごとに更新
     fetchDolphinStatus();
     setInterval(fetchDolphinStatus, 10000);
+
+    // ==========================================
+    // Kronos
+    // ==========================================
+    const MAX_ND = 8;
+
+    function renderNdIndicator(nd) {
+      let html = '<div class="nd-bar">';
+      for (let i = 0; i < MAX_ND; i++) {
+        const filled = i < nd;
+        const danger = nd >= 6 && filled;
+        html += '<div class="nd-pip' + (filled ? (danger ? ' danger' : ' filled') : '') + '"></div>';
+      }
+      html += '<span style="margin-left:8px;font-size:13px;color:#8892b0;">' + nd + ' / ' + MAX_ND + ' 段</span></div>';
+      return html;
+    }
+
+    async function fetchKronosStatus() {
+      if (activeTab !== 'kronos' && activeTab !== 'combined') return;
+      try {
+        const res = await fetch('/api/kronos/status');
+        const data = await res.json();
+
+        if (!data.active && data.message === '未接続') {
+          document.getElementById('k-balance').textContent = '--';
+          document.getElementById('k-equity').textContent = '--';
+          document.getElementById('k-dd').textContent = '--';
+          document.getElementById('k-nd').textContent = '--';
+          document.getElementById('k-heartbeat').textContent = '未接続';
+          document.getElementById('k-heartbeat').className = 'stat-value warn';
+          document.getElementById('k-update').textContent = '--';
+          document.getElementById('k-positions').innerHTML = '';
+          document.getElementById('k-pos-empty').style.display = 'block';
+          document.getElementById('k-nd-indicator').innerHTML = renderNdIndicator(0);
+          return;
+        }
+
+        document.getElementById('k-balance').textContent = Number(data.balance).toLocaleString();
+        document.getElementById('k-equity').textContent = Number(data.equity).toLocaleString();
+        const ddEl = document.getElementById('k-dd');
+        ddEl.textContent = (data.dd_percent || 0).toFixed(2) + '%';
+        ddEl.className = 'stat-value' + (data.dd_percent > 10 ? ' warn' : '');
+        document.getElementById('k-nd').textContent = data.nd || 0;
+        document.getElementById('k-update').textContent = data.timestamp || '--';
+
+        // ハートビート
+        const hbEl = document.getElementById('k-heartbeat');
+        if (data.heartbeat_lost) {
+          hbEl.textContent = '途絶';
+          hbEl.className = 'stat-value warn';
+        } else {
+          hbEl.textContent = '正常';
+          hbEl.className = 'stat-value ok';
+        }
+
+        // ND インジケーター
+        document.getElementById('k-nd-indicator').innerHTML = renderNdIndicator(data.nd || 0);
+
+        // ポジション
+        const positions = data.positions || [];
+        const tbody = document.getElementById('k-positions');
+        tbody.innerHTML = '';
+        document.getElementById('k-pos-empty').style.display = positions.length ? 'none' : 'block';
+
+        positions.forEach(p => {
+          const tr = document.createElement('tr');
+          const profitColor = p.profit >= 0 ? '#64ffda' : '#ff6b6b';
+          tr.innerHTML =
+            '<td>' + p.ticket + '</td>' +
+            '<td>' + p.magic + '</td>' +
+            '<td>' + (p.type || '').toUpperCase() + '</td>' +
+            '<td>' + p.lots + '</td>' +
+            '<td>' + p.open_price + '</td>' +
+            '<td>' + (p.current_price || '--') + '</td>' +
+            '<td style="color:' + profitColor + '">' + Number(p.profit).toLocaleString() + '</td>';
+          tbody.appendChild(tr);
+        });
+
+        // 合算データ保存（合算タブ用）
+        window._kronosLive = data;
+      } catch (e) {
+        console.error('Kronos fetch error:', e);
+      }
+    }
+
+    // --- Kronos 損益グラフ ---
+    let kronosChart = null;
+
+    async function fetchKronosTrades() {
+      try {
+        const res = await fetch('/api/kronos/trades');
+        const trades = await res.json();
+
+        // 累積統計
+        const totalTrades = trades.length;
+        const wins = trades.filter(t => t.profit >= 0).length;
+        const totalProfit = trades.reduce((s, t) => s + (t.profit || 0), 0);
+
+        document.getElementById('k-total-trades').textContent = totalTrades;
+
+        if (totalTrades > 0) {
+          document.getElementById('k-winrate').textContent = (wins / totalTrades * 100).toFixed(1) + '%';
+          document.getElementById('k-total-profit').textContent = totalProfit.toLocaleString();
+          document.getElementById('k-total-profit').style.color = totalProfit >= 0 ? '#64ffda' : '#ff6b6b';
+
+          // 日次集計して平均日利算出
+          const daily = {};
+          trades.forEach(t => {
+            const d = (t.close_time || '').substring(0, 10);
+            if (d.length >= 10) {
+              daily[d] = (daily[d] || 0) + (t.profit || 0);
+            }
+          });
+          const days = Object.keys(daily).sort();
+          const avgDaily = days.length > 0 ? totalProfit / days.length : 0;
+          document.getElementById('k-avg-daily').textContent = avgDaily.toFixed(0);
+          document.getElementById('k-stats-msg').style.display = 'none';
+
+          // グラフ描画
+          document.getElementById('k-chart-empty').style.display = 'none';
+          document.getElementById('k-chart').parentElement.style.display = 'block';
+
+          const dailyProfits = days.map(d => daily[d]);
+          const cumulative = [];
+          let cum = 0;
+          dailyProfits.forEach(p => { cum += p; cumulative.push(cum); });
+
+          if (kronosChart) kronosChart.destroy();
+          kronosChart = new Chart(document.getElementById('k-chart'), {
+            type: 'line',
+            data: {
+              labels: days,
+              datasets: [{
+                label: '累積損益',
+                data: cumulative,
+                borderColor: '#64ffda',
+                backgroundColor: 'rgba(100,255,218,0.1)',
+                fill: true,
+                tension: 0.3
+              }]
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { legend: { labels: { color: '#8892b0' } } },
+              scales: {
+                x: { ticks: { color: '#555e7e', maxRotation: 45 }, grid: { color: '#0f3460' } },
+                y: { ticks: { color: '#8892b0' }, grid: { color: '#0f3460' } }
+              }
+            }
+          });
+
+          // 合算用にデイリーデータ保存
+          window._kronosDailyData = { days, dailyProfits };
+        } else {
+          document.getElementById('k-winrate').textContent = '--';
+          document.getElementById('k-total-profit').textContent = '--';
+          document.getElementById('k-avg-daily').textContent = '--';
+          document.getElementById('k-chart-empty').style.display = 'block';
+          document.getElementById('k-chart').parentElement.style.display = 'none';
+          document.getElementById('k-stats-msg').textContent = '蓄積中（' + totalTrades + '件）';
+          document.getElementById('k-stats-msg').style.display = 'block';
+        }
+      } catch (e) {
+        console.error('Kronos trades fetch error:', e);
+      }
+    }
+
+    // --- DSアップロード ---
+    document.getElementById('k-upload-area').addEventListener('click', () => {
+      document.getElementById('k-file-input').click();
+    });
+    document.getElementById('k-file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const resultEl = document.getElementById('k-upload-result');
+      try {
+        const res = await fetch('/api/kronos/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) {
+          resultEl.className = 'upload-result success';
+          resultEl.textContent = 'インポート完了: ' + data.imported + '件取り込み / ' + data.skipped + '件スキップ（合計' + data.total + '件）';
+          fetchKronosTrades();
+        } else {
+          resultEl.className = 'upload-result error';
+          resultEl.textContent = 'エラー: ' + (data.error || 'Unknown');
+        }
+      } catch (err) {
+        resultEl.className = 'upload-result error';
+        resultEl.textContent = 'アップロード失敗: ' + err.message;
+      }
+      e.target.value = '';
+    });
+
+    // Kronos初期ロード+ポーリング
+    fetchKronosStatus();
+    fetchKronosTrades();
+    setInterval(fetchKronosStatus, 10000);
+
+    // ==========================================
+    // 合算タブ
+    // ==========================================
+    let combinedChart = null;
+    let combinedMode = 'combined';
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        combinedMode = btn.dataset.mode;
+        updateCombinedTab();
+      });
+    });
+
+    async function updateCombinedTab() {
+      try {
+        const accRes = await fetch('/api/accounts');
+        const accounts = await accRes.json();
+        const d = accounts.dolphin || {};
+        const k = accounts.kronos || {};
+
+        // サマリー計算
+        let totalBal = 0, totalEq = 0;
+        let label = '合算';
+
+        if (combinedMode === 'dolphin' || combinedMode === 'combined') {
+          totalBal += (d.balance || 0);
+          totalEq += (d.equity || 0);
+        }
+        if (combinedMode === 'kronos' || combinedMode === 'combined') {
+          totalBal += (k.balance || 0);
+          totalEq += (k.equity || 0);
+        }
+
+        if (combinedMode === 'dolphin') label = 'Dolphin';
+        else if (combinedMode === 'kronos') label = 'Kronos';
+
+        const totalDd = totalBal > 0 ? ((totalBal - totalEq) / totalBal * 100) : 0;
+
+        document.getElementById('c-total-balance').textContent = totalBal.toLocaleString();
+        const ddEl = document.getElementById('c-total-dd');
+        ddEl.textContent = totalDd.toFixed(2) + '%';
+        ddEl.style.color = totalDd > 10 ? '#ff6b6b' : '#ccd6f6';
+        document.getElementById('c-chart-title').textContent = label + ' 日次損益';
+
+        // 今月損益（Dolphin trades + Kronos trades）
+        const now = new Date();
+        const thisMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        let monthProfit = 0;
+
+        if (combinedMode === 'dolphin' || combinedMode === 'combined') {
+          const dRes = await fetch('/api/trades');
+          const dTrades = await dRes.json();
+          dTrades.forEach(t => {
+            if ((t.close_time || '').startsWith(thisMonth)) monthProfit += (t.profit || 0);
+          });
+        }
+        if (combinedMode === 'kronos' || combinedMode === 'combined') {
+          const kRes = await fetch('/api/kronos/trades');
+          const kTrades = await kRes.json();
+          kTrades.forEach(t => {
+            if ((t.close_time || '').startsWith(thisMonth)) monthProfit += (t.profit || 0);
+          });
+        }
+
+        const mpEl = document.getElementById('c-month-profit');
+        mpEl.textContent = monthProfit.toLocaleString();
+        mpEl.style.color = monthProfit >= 0 ? '#64ffda' : '#ff6b6b';
+
+        // 合算日次グラフ
+        await renderCombinedChart();
+      } catch (e) {
+        console.error('Combined tab error:', e);
+      }
+    }
+
+    async function renderCombinedChart() {
+      const dailyMap = {};
+
+      if (combinedMode === 'dolphin' || combinedMode === 'combined') {
+        try {
+          const res = await fetch('/api/trades');
+          const trades = await res.json();
+          trades.forEach(t => {
+            const d = (t.close_time || '').substring(0, 10);
+            if (d.length >= 10) dailyMap[d] = (dailyMap[d] || 0) + (t.profit || 0);
+          });
+        } catch (_) {}
+      }
+
+      if (combinedMode === 'kronos' || combinedMode === 'combined') {
+        try {
+          const res = await fetch('/api/kronos/trades');
+          const trades = await res.json();
+          trades.forEach(t => {
+            const d = (t.close_time || '').substring(0, 10);
+            if (d.length >= 10) dailyMap[d] = (dailyMap[d] || 0) + (t.profit || 0);
+          });
+        } catch (_) {}
+      }
+
+      const days = Object.keys(dailyMap).sort();
+      if (days.length === 0) {
+        document.getElementById('c-chart-empty').style.display = 'block';
+        document.getElementById('c-chart').parentElement.style.display = 'none';
+        if (combinedChart) { combinedChart.destroy(); combinedChart = null; }
+        return;
+      }
+
+      document.getElementById('c-chart-empty').style.display = 'none';
+      document.getElementById('c-chart').parentElement.style.display = 'block';
+
+      const profits = days.map(d => dailyMap[d]);
+      const colors = profits.map(p => p >= 0 ? 'rgba(100,255,218,0.8)' : 'rgba(255,107,107,0.8)');
+
+      if (combinedChart) combinedChart.destroy();
+      combinedChart = new Chart(document.getElementById('c-chart'), {
+        type: 'bar',
+        data: {
+          labels: days,
+          datasets: [{
+            label: '日次損益',
+            data: profits,
+            backgroundColor: colors,
+            borderRadius: 3
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#8892b0' } } },
+          scales: {
+            x: { ticks: { color: '#555e7e', maxRotation: 45 }, grid: { color: '#0f3460' } },
+            y: { ticks: { color: '#8892b0' }, grid: { color: '#0f3460' } }
+          }
+        }
+      });
+    }
+
+    // 合算タブ初回 + ポーリング
+    updateCombinedTab();
+    setInterval(() => { if (activeTab === 'combined') updateCombinedTab(); }, 10000);
   </script>
 </body>
 </html>
