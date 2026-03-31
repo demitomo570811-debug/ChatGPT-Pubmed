@@ -121,6 +121,21 @@ setInterval(() => {
   }
 }, 15000);
 
+// ---------------------
+// Kronos ステータスファイル読み込みヘルパー
+// ---------------------
+function readKronosStatus() {
+  if (!KRONOS_STATUS_FILE || !fs.existsSync(KRONOS_STATUS_FILE)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(KRONOS_STATUS_FILE, 'utf8'));
+  } catch (e) {
+    console.error('kronos_status.json read error:', e.message);
+    return null;
+  }
+}
+
 function readDb() {
   return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
 }
@@ -168,56 +183,60 @@ app.post('/api/trades', (req, res) => {
 });
 
 // ---------------------
-// 新規: マルチアカウント共通
+// マルチアカウント共通
 // ---------------------
 
-// GET /api/accounts - 全口座サマリー返却
+// GET /api/accounts - 全口座サマリー（オブジェクト形式）
 app.get('/api/accounts', (req, res) => {
   const db = readDb();
-  const accounts = (db.accounts || []).map(acct => {
-    // Dolphin の場合は既存 status から残高等を付与
-    if (acct.id === 'dolphin') {
-      const s = db.status || {};
-      return {
-        ...acct,
-        balance: s.balance || null,
-        equity: s.equity || null,
-        dd_percent: s.dd_percent || null,
-        last_update: s.timestamp || null
-      };
+  const dolphinStatus = db.status || {};
+  const kronosStatus = readKronosStatus();
+  const kronosAcct = (db.accounts || []).find(a => a.id === 'kronos') || {};
+
+  const result = {
+    dolphin: {
+      name: 'DolphinEA',
+      broker: 'BigBoss',
+      balance: dolphinStatus.balance || null,
+      equity: dolphinStatus.equity || null,
+      dd_percent: dolphinStatus.dd_percent || null,
+      active: true,
+      last_heartbeat: dolphinStatus.timestamp || null
+    },
+    kronos: {
+      name: kronosAcct.name || 'Kronos Gold デフォルト',
+      broker: 'XM',
+      balance: kronosStatus ? kronosStatus.balance : null,
+      equity: kronosStatus ? kronosStatus.equity : null,
+      dd_percent: kronosStatus ? kronosStatus.dd_percent : null,
+      active: kronosStatus ? (kronosStatus.active || false) : false,
+      last_heartbeat: kronosStatus ? kronosStatus.timestamp : null
     }
-    // Kronos の場合は kronos_status から付与
-    if (acct.id === 'kronos') {
-      const s = db.kronos_status || {};
-      return {
-        ...acct,
-        balance: s.balance || null,
-        equity: s.equity || null,
-        dd_percent: s.dd_percent || null,
-        last_update: s.timestamp || null
-      };
-    }
-    return acct;
-  });
-  res.json(accounts);
+  };
+  res.json(result);
 });
 
 // ---------------------
-// 新規: Kronos エンドポイント
+// Kronos エンドポイント
 // ---------------------
 
 // GET /api/kronos/status - kronos_status.json を直読み
 app.get('/api/kronos/status', (req, res) => {
-  if (!KRONOS_STATUS_FILE || !fs.existsSync(KRONOS_STATUS_FILE)) {
+  const data = readKronosStatus();
+  if (!data) {
     return res.json({ active: false, message: '未接続', timestamp: null });
   }
+  // ハートビートタイムアウト判定
   try {
-    const data = JSON.parse(fs.readFileSync(KRONOS_STATUS_FILE, 'utf8'));
-    res.json(data);
-  } catch (e) {
-    console.error('kronos_status.json read error:', e.message);
-    res.json({ active: false, message: '未接続', timestamp: null });
+    const ts = new Date(data.timestamp).getTime();
+    const ageSec = (Date.now() - ts) / 1000;
+    if (ageSec > HEARTBEAT_TIMEOUT_SEC) {
+      data.heartbeat_lost = true;
+    }
+  } catch (_) {
+    data.heartbeat_lost = true;
   }
+  res.json(data);
 });
 
 // GET /api/kronos/trades
@@ -226,20 +245,127 @@ app.get('/api/kronos/trades', (req, res) => {
   res.json(db.kronos_trades || []);
 });
 
-// POST /api/kronos/upload - DSファイルアップロード受付
+// POST /api/kronos/upload - DSファイルアップロード＋パース
 const upload = multer({ dest: path.join(__dirname, 'uploads') });
 app.post('/api/kronos/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  // パース処理は Phase 2 以降で実装
-  res.json({
-    ok: true,
-    message: 'File received (parse not yet implemented)',
-    filename: req.file.originalname,
-    size: req.file.size
-  });
+
+  try {
+    const html = fs.readFileSync(req.file.path, 'utf8');
+    const trades = parseDsHtml(html);
+
+    // db.jsonに追記（重複チケットはスキップ）
+    const db = readDb();
+    const existing = new Set((db.kronos_trades || []).map(t => t.ticket));
+    const newTrades = trades.filter(t => !existing.has(t.ticket));
+    db.kronos_trades = (db.kronos_trades || []).concat(newTrades);
+
+    // 日次統計を計算して kronos_daily_dd に追記
+    const dailyStats = calcDailyStats(newTrades);
+    const existingDates = new Set((db.kronos_daily_dd || []).map(d => d.date));
+    for (const stat of dailyStats) {
+      if (existingDates.has(stat.date)) {
+        // 既存日付はマージ（加算）
+        const idx = db.kronos_daily_dd.findIndex(d => d.date === stat.date);
+        if (idx >= 0) {
+          db.kronos_daily_dd[idx].total_profit += stat.total_profit;
+          db.kronos_daily_dd[idx].trade_count += stat.trade_count;
+          db.kronos_daily_dd[idx].win_count += stat.win_count;
+          db.kronos_daily_dd[idx].loss_count += stat.loss_count;
+        }
+      } else {
+        db.kronos_daily_dd.push(stat);
+      }
+    }
+    // 日付順ソート
+    db.kronos_daily_dd.sort((a, b) => a.date.localeCompare(b.date));
+
+    writeDb(db);
+
+    // アップロード後にテンポラリ削除
+    fs.unlinkSync(req.file.path);
+
+    res.json({
+      ok: true,
+      imported: newTrades.length,
+      skipped: trades.length - newTrades.length,
+      total: db.kronos_trades.length
+    });
+  } catch (e) {
+    console.error('DS parse error:', e.message);
+    res.status(500).json({ error: 'Parse failed: ' + e.message });
+  }
 });
+
+// ---------------------
+// DSパーサー
+// ---------------------
+function parseDsHtml(html) {
+  const trades = [];
+  // <tr> 行からトレード情報を抽出
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const row = rowMatch[1];
+    const cells = [];
+    const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let cellMatch;
+    while ((cellMatch = cellRegex.exec(row)) !== null) {
+      cells.push(cellMatch[1].replace(/<[^>]*>/g, '').trim());
+    }
+
+    // DSの典型的なカラム配置:
+    // ticket, open_time, type, lots, symbol, open_price, sl, tp, close_time, close_price, commission, taxes, swap, profit, magic
+    if (cells.length < 14) continue;
+
+    const ticket = parseInt(cells[0], 10);
+    if (isNaN(ticket)) continue;
+
+    const typeStr = cells[2].toLowerCase();
+    if (typeStr !== 'buy' && typeStr !== 'sell') continue;
+
+    const trade = {
+      ticket: ticket,
+      open_time: normalizeTimestamp(cells[1]),
+      type: typeStr,
+      lots: parseFloat(cells[3]) || 0,
+      symbol: cells[4],
+      open_price: parseFloat(cells[5]) || 0,
+      close_time: normalizeTimestamp(cells[8]),
+      close_price: parseFloat(cells[9]) || 0,
+      profit: parseFloat(cells[13]) || 0,
+      magic: parseInt(cells[14], 10) || 0
+    };
+    trades.push(trade);
+  }
+
+  return trades;
+}
+
+function normalizeTimestamp(ts) {
+  if (!ts) return '';
+  // "2026.03.31 12:00:00" → "2026-03-31 12:00:00"
+  return ts.replace(/\./g, '-');
+}
+
+function calcDailyStats(trades) {
+  const byDate = {};
+  for (const t of trades) {
+    const date = (t.close_time || '').substring(0, 10);
+    if (!date || date.length < 10) continue;
+    if (!byDate[date]) {
+      byDate[date] = { date, total_profit: 0, trade_count: 0, win_count: 0, loss_count: 0 };
+    }
+    byDate[date].total_profit += t.profit;
+    byDate[date].trade_count++;
+    if (t.profit >= 0) byDate[date].win_count++;
+    else byDate[date].loss_count++;
+  }
+  return Object.values(byDate);
+}
 
 // ---------------------
 // フロントエンド配信
