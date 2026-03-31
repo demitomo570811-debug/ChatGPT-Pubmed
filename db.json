@@ -27,9 +27,15 @@
       "nappin_count": 8,
       "nappin_width_pips": 300,
       "endurance_pips": 270,
-      "indicator_stop": false,
-      "friday_stop_hour": 0,
-      "monday_start_hour": 0,
+      "indicator_stop": true,
+      "indicator_rate": 3,
+      "indicator_stop_before_min": 180,
+      "indicator_restart_after_min": 120,
+      "friday_entry_stop_mt4": "10:00",
+      "monday_entry_start_mt4": "06:00",
+      "friday_entry_stop_jst": "16:00",
+      "monday_entry_start_jst": "12:00",
+      "mt4_jst_offset_hours": -6,
       "active": false
     }
   ],
